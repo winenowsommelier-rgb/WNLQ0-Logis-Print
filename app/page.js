@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import FileUploader from "@/components/FileUploader";
 import LabelSheet from "@/components/LabelSheet";
+import ParseReviewTable from "@/components/ParseReviewTable";
 
 export default function HomePage() {
   const [labels, setLabels] = useState([]);
+  const [parsedItems, setParsedItems] = useState([]);
   const [sourceFiles, setSourceFiles] = useState([]);
 
   const summary = useMemo(() => {
@@ -22,14 +24,28 @@ export default function HomePage() {
       <header className="hero">
         <h1>Warehouse Label Printer</h1>
         <p>
-          Upload one or more PO PDFs, parse SKU/product/quantity/barcode, merge into one print batch,
-          preview, and print exact 32mm × 25mm labels.
+          Upload one or more PO PDFs, parse SKU/quantity rows, confirm parsed rows, then generate and print
+          exact 32mm × 25mm labels.
         </p>
       </header>
 
       <section className="card">
-        <FileUploader onLabelsParsed={setLabels} onFilesProcessed={setSourceFiles} />
+        <FileUploader
+          onItemsParsed={(items) => {
+            setParsedItems(items);
+            setLabels([]);
+          }}
+          onFilesProcessed={setSourceFiles}
+        />
       </section>
+
+      <ParseReviewTable
+        items={parsedItems}
+        onConfirm={({ items, labels: generatedLabels }) => {
+          setParsedItems(items);
+          setLabels(generatedLabels);
+        }}
+      />
 
       <section className="stats">
         <article className="statCard">

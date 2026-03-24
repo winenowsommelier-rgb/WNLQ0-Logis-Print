@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { expandItemsToLabels, parsePOTextToItems } from "@/utils/parsePO";
+import { parsePOTextToItems } from "@/utils/parsePO";
 
 let pdfjsLibPromise;
 
@@ -44,12 +44,12 @@ async function extractTextFromPdf(file) {
   return pageTexts.join("\n");
 }
 
-export default function FileUploader({ onLabelsParsed, onFilesProcessed }) {
+export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("No files selected");
 
   const resetBatch = () => {
-    onLabelsParsed([]);
+    onItemsParsed([]);
     onFilesProcessed([]);
     setStatus("Cleared current print batch.");
   };
@@ -73,24 +73,23 @@ export default function FileUploader({ onLabelsParsed, onFilesProcessed }) {
         allItems.push(...fileItems);
       }
 
-      const labels = expandItemsToLabels(allItems);
       onFilesProcessed(selectedFiles.map((file) => file.name));
-      onLabelsParsed(labels);
+      onItemsParsed(allItems);
 
-      if (!labels.length) {
+      if (!allItems.length) {
         setStatus(
           `Parsed ${selectedFiles.length} file(s), but no SKU rows were found. Expected SKU token length: 8-12 characters.`
         );
       } else {
         setStatus(
-          `Done. Parsed ${allItems.length} line items from ${selectedFiles.length} PO(s) into ${labels.length} labels.`
+          `Done. Parsed ${allItems.length} line item(s). Please confirm rows before generating labels.`
         );
       }
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Unknown PDF parse error";
       setStatus(`Failed to parse PDF(s): ${message}`);
-      onLabelsParsed([]);
+      onItemsParsed([]);
       onFilesProcessed([]);
     } finally {
       setIsProcessing(false);

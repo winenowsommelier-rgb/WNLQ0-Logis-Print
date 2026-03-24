@@ -227,3 +227,43 @@ body {
     border: 0.2mm solid #000;
   }
 }
+
+
+.tableWrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0.75rem 0;
+}
+
+.reviewTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.reviewTable th,
+.reviewTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.reviewTable th {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.tableInput {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+.btnDanger {
+  background: #b91c1c;
+}
