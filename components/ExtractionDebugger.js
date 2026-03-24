@@ -23,7 +23,7 @@ function writeTemplates(templates) {
   }
 }
 
-export default function ExtractionDebugger({ batches, onApplyTemplate }) {
+export default function ExtractionDebugger({ batches, onApplyTemplate, onLockTemplate, lockedTemplateName }) {
   const [templates, setTemplates] = useState(readTemplates);
   const [selected, setSelected] = useState(templates[0]?.name || "");
   const [name, setName] = useState("");
@@ -98,10 +98,11 @@ export default function ExtractionDebugger({ batches, onApplyTemplate }) {
           ))}
         </select>
         <button className="btn" type="button" onClick={applyTemplate} disabled={!selectedTemplate}>Apply template parsing</button>
+        <button className="btn" type="button" onClick={() => selectedTemplate && onLockTemplate?.(selectedTemplate)} disabled={!selectedTemplate}>Lock template for uploads</button>
       </div>
 
       <div className="previewWrap">
-        <p className="small">First 60 extracted rows:</p>
+        <p className="small">First 60 extracted rows. Active lock: {lockedTemplateName || "none"}</p>
         <pre className="rawRows">{allRows.slice(0, 60).map((row) => `[${row.sourceName}] ${row.line}`).join("\n")}</pre>
       </div>
     </section>

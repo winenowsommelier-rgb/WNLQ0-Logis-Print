@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { expandItemsToLabels, parsePOTextToItems } from '../utils/parsePO.js';
 
-test('parses PO table format Qty SKU Product and ignores barcode/totals lines', () => {
+test('parses PO table format Qty SKU Product and captures barcode/location/totals values', () => {
   const text = `
 Qty SKU Product ราคา Discount Total
 6 WRW5942GE 2:am Shiraz Barossa Valley ฿2,088 ฿12,528
 Barcode: 9349386005751
+Location: S12/2
 Taxes ฿877
 Grand total ฿13,405
 `;
@@ -15,15 +16,22 @@ Grand total ฿13,405
 
   assert.equal(items.length, 1);
   assert.deepEqual(items[0], {
-    sku: 'WRW5942GE',
-    productName: '2:am Shiraz Barossa Valley',
+    line_no: 1,
+    qty: 6,
     quantity: 6,
-    barcode: 'WRW5942GE',
+    sku: 'WRW5942GE',
+    product_name: '2:am Shiraz Barossa Valley',
+    productName: '2:am Shiraz Barossa Valley',
+    unit_price_thb: 2088,
+    discount_thb: null,
+    line_total_thb: 12528,
+    barcode: '9349386005751',
+    location: 'S12/2',
     sourceName: 'po-a.pdf'
   });
 });
 
-test('parses multiple table items and ignores Barcode/Location continuation lines', () => {
+test('parses multiple table items and keeps row quantities', () => {
   const text = `
 Qty SKU Product ราคา Discount Total
 12 WSP1104BU Moet & Chandon Brut Imperial (750 ml) ฿3,622 ฿43,464
@@ -65,7 +73,6 @@ test('expands labels strictly by qty and barcode uses SKU only', () => {
   assert.equal(labels[0].barcode, 'WRW5942GE');
   assert.equal(labels[1].copyNumber, 2);
 });
-
 
 test('parses column-split rows where qty and sku are on separate lines', () => {
   const text = `

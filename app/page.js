@@ -12,6 +12,7 @@ export default function HomePage() {
   const [parsedItems, setParsedItems] = useState([]);
   const [sourceFiles, setSourceFiles] = useState([]);
   const [extractionBatches, setExtractionBatches] = useState([]);
+  const [lockedTemplate, setLockedTemplate] = useState(null);
 
   const summary = useMemo(() => {
     const skuSet = new Set(labels.map((label) => label.sku));
@@ -41,15 +42,18 @@ export default function HomePage() {
           }}
           onFilesProcessed={setSourceFiles}
           onExtractionReady={setExtractionBatches}
+          lockedTemplate={lockedTemplate}
         />
       </section>
 
       <ExtractionDebugger
         batches={extractionBatches}
+        lockedTemplateName={lockedTemplate?.name || ""}
         onApplyTemplate={(items) => {
           setParsedItems(items);
           setLabels(expandItemsToLabels(items));
         }}
+        onLockTemplate={(template) => setLockedTemplate(template)}
       />
 
       <ParseReviewTable

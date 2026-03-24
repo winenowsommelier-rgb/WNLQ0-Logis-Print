@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parsePOTextToItems } from "@/utils/parsePO";
+import { parsePOTextToItems, parseRowsByTemplate } from "@/utils/parsePO";
 
 let pdfjsLibPromise;
 
@@ -74,7 +74,7 @@ async function extractTextFromPdf(file) {
   return { text: pageTexts.join("\n"), rows: pageTexts.flatMap((page) => page.split("\n")).filter(Boolean).map((line) => ({ line })) };
 }
 
-export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtractionReady }) {
+export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtractionReady, lockedTemplate }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("No files selected");
 
@@ -99,7 +99,9 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtrac
 
       for (const file of selectedFiles) {
         const extracted = await extractTextFromPdf(file);
-        const fileItems = parsePOTextToItems(extracted.text, file.name);
+        const fileItems = lockedTemplate
+          ? parseRowsByTemplate(extracted.rows.map((r) => r.line), file.name, lockedTemplate)
+          : parsePOTextToItems(extracted.text, file.name);
         if (onExtractionReady) {
           onExtractionReady((prev) => [...prev, { sourceName: file.name, rows: extracted.rows }]);
         }
@@ -115,7 +117,7 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtrac
         );
       } else {
         setStatus(
-          `Done. Parsed ${allItems.length} line item(s). Please confirm rows before generating labels.`
+          `Done. Parsed ${allItems.length} line item(s). Please confirm rows before generating labels${lockedTemplate ? " (template lock mode)" : ""}.`
         );
       }
     } catch (error) {
