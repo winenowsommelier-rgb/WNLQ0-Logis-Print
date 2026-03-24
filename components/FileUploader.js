@@ -35,10 +35,40 @@ async function extractTextFromPdf(file) {
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
-    const lines = content.items
-      .map((item) => `${item.str}${item.hasEOL ? "\n" : " "}`)
-      .join("");
-    pageTexts.push(lines);
+
+    const rows = [];
+    const tolerance = 2;
+
+    for (const item of content.items) {
+      const text = item.str?.trim();
+      if (!text) {
+        continue;
+      }
+
+      const x = item.transform?.[4] ?? 0;
+      const y = item.transform?.[5] ?? 0;
+
+      let row = rows.find((candidate) => Math.abs(candidate.y - y) <= tolerance);
+      if (!row) {
+        row = { y, words: [] };
+        rows.push(row);
+      }
+
+      row.words.push({ x, text });
+    }
+
+    rows.sort((a, b) => b.y - a.y);
+
+    const pageLines = rows.map((row) =>
+      row.words
+        .sort((a, b) => a.x - b.x)
+        .map((word) => word.text)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+
+    pageTexts.push(pageLines.join("\n"));
   }
 
   return pageTexts.join("\n");
