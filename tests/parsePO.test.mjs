@@ -16,7 +16,7 @@ test('parses 8-12 char SKU with qty before SKU and ignores trailing price/total'
   });
 });
 
-test('parses sku-first style with qty after SKU', () => {
+test('parses sku-first style with qty after product text', () => {
   const text = 'ZX90LM12 Luxe Velvet Tray 3 9.99 29.97';
   const items = parsePOTextToItems(text, 'po-b.pdf');
 
@@ -26,16 +26,14 @@ test('parses sku-first style with qty after SKU', () => {
   assert.equal(items[0].barcode, 'ZX90LM12');
 });
 
-test('defaults quantity to 1 when qty not explicitly adjacent', () => {
+test('skips sku line when quantity is missing to avoid false label inflation', () => {
   const text = 'SKU998877 Premium Bundle Pack BarcodeValueInsideName';
   const items = parsePOTextToItems(text, 'po-c.pdf');
 
-  assert.equal(items.length, 1);
-  assert.equal(items[0].quantity, 1);
-  assert.equal(items[0].sku, 'SKU998877');
+  assert.equal(items.length, 0);
 });
 
-test('expandItemsToLabels creates barcode from SKU only', () => {
+test('expands labels strictly by parsed qty and barcode uses SKU only', () => {
   const labels = expandItemsToLabels([
     {
       sku: 'AB12CD34',

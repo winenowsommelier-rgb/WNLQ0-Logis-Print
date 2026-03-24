@@ -1,6 +1,7 @@
 const SKU_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9_-]{8,12}$/;
 const QTY_REGEX = /^\d{1,4}$/;
 const MONEY_REGEX = /^\d+\.\d{1,2}$/;
+const MAX_REASONABLE_QTY = 500;
 
 function normalizeText(text) {
   return text
@@ -15,36 +16,49 @@ function findSkuIndex(tokens) {
   return tokens.findIndex((token) => SKU_REGEX.test(token));
 }
 
-function parseQuantity(tokens, skuIndex) {
-  const before = skuIndex > 0 ? tokens[skuIndex - 1] : null;
-  const after = skuIndex + 1 < tokens.length ? tokens[skuIndex + 1] : null;
+function findQuantity(tokens, skuIndex) {
+  const qtyCandidates = [];
 
+  // Strong candidates: immediate neighbors.
+  const before = tokens[skuIndex - 1];
+  const after = tokens[skuIndex + 1];
   if (before && QTY_REGEX.test(before)) {
-    return Number.parseInt(before, 10);
+    qtyCandidates.push({ score: 3, value: Number.parseInt(before, 10) });
   }
-
   if (after && QTY_REGEX.test(after)) {
-    return Number.parseInt(after, 10);
+    qtyCandidates.push({ score: 3, value: Number.parseInt(after, 10) });
   }
 
-  // Fallback: for sku-first rows, qty often appears near the end before price/total.
-  const afterSku = tokens.slice(skuIndex + 1);
-  const moneyIndex = afterSku.findIndex((token) => MONEY_REGEX.test(token));
-  const qtySearchTokens = moneyIndex >= 0 ? afterSku.slice(0, moneyIndex) : afterSku;
+  // Secondary candidates: near SKU and before price columns.
+  const moneyIndex = tokens.findIndex((token) => MONEY_REGEX.test(token));
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!QTY_REGEX.test(tokens[i])) {
+      continue;
+    }
 
-  for (let i = qtySearchTokens.length - 1; i >= 0; i -= 1) {
-    if (QTY_REGEX.test(qtySearchTokens[i])) {
-      return Number.parseInt(qtySearchTokens[i], 10);
+    const value = Number.parseInt(tokens[i], 10);
+    if (value < 1 || value > MAX_REASONABLE_QTY) {
+      continue;
+    }
+
+    const distance = Math.abs(i - skuIndex);
+    const beforePrices = moneyIndex < 0 || i < moneyIndex;
+    if (distance <= 6 && beforePrices) {
+      qtyCandidates.push({ score: 2, value });
     }
   }
 
-  return 1;
+  if (!qtyCandidates.length) {
+    return null;
+  }
+
+  qtyCandidates.sort((a, b) => b.score - a.score);
+  return qtyCandidates[0].value;
 }
 
 function parseProductName(tokens, skuIndex) {
   const afterSku = tokens.slice(skuIndex + 1);
 
-  // If PO row contains trailing price/total values, drop them from product name.
   let cutIndex = afterSku.length;
   for (let i = 0; i < afterSku.length - 1; i += 1) {
     if (MONEY_REGEX.test(afterSku[i]) && MONEY_REGEX.test(afterSku[i + 1])) {
@@ -59,6 +73,7 @@ function parseProductName(tokens, skuIndex) {
 
 export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
   const lines = normalizeText(text);
+  const seen = new Set();
   const items = [];
 
   for (const line of lines) {
@@ -70,16 +85,22 @@ export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
     }
 
     const sku = tokens[skuIndex];
-    const quantity = parseQuantity(tokens, skuIndex);
-    const productName = parseProductName(tokens, skuIndex);
-
-    if (!productName) {
+    const quantity = findQuantity(tokens, skuIndex);
+    if (!quantity) {
       continue;
     }
 
+    const productName = parseProductName(tokens, skuIndex);
+    const dedupeKey = `${sku}|${quantity}|${productName}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+
     items.push({
       sku,
-      productName,
+      productName: productName || sku,
       quantity,
       // Barcode for scanners must be SKU only.
       barcode: sku,

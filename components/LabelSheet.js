@@ -7,7 +7,7 @@ const LabelCard = memo(function LabelCard({ label }) {
   const barcodeRef = useRef(null);
 
   useEffect(() => {
-    if (!barcodeRef.current || !label.barcode) {
+    if (!barcodeRef.current || !label.sku) {
       return;
     }
 
@@ -22,18 +22,13 @@ const LabelCard = memo(function LabelCard({ label }) {
 
   return (
     <article className="label premiumLabel">
-      <header className="labelHeader">
-        <div className="labelSku" title={label.sku}>{label.sku}</div>
-        <div className="labelQtyPill">{label.copyNumber}/{label.quantity}</div>
-      </header>
+      <header className="labelTopName" title={label.sku}>{label.sku}</header>
 
-      <div className="labelName" title={label.productName}>{label.productName}</div>
-
-      <div className="barcodeWrap">
+      <div className="barcodeWrap barcodeMain">
         <svg ref={barcodeRef} aria-label={`barcode-${label.sku}`} />
       </div>
 
-      <footer className="labelFooter">{label.sourceName}</footer>
+      <footer className="labelItemName" title={label.productName}>{label.productName}</footer>
     </article>
   );
 });
@@ -42,7 +37,7 @@ export default function LabelSheet({ labels }) {
   return (
     <section>
       <h2>Label Preview</h2>
-      <p className="small">Premium compact layout: bold SKU, high-contrast barcode, clear quantity badge.</p>
+      <p className="small">Sticker order: SKU (top), barcode of SKU (middle), full item name (bottom).</p>
 
       <div className="previewWrap">
         {labels.length ? (
