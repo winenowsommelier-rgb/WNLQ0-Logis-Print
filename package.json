@@ -10,7 +10,15 @@
   },
   "dependencies": {
     "jsbarcode": "^3.12.1",
+<<<<<<< ours
+<<<<<<< ours
     "next": "16.0.10",
+=======
+    "next": "16.0.0",
+>>>>>>> theirs
+=======
+    "next": "16.0.0",
+>>>>>>> theirs
     "pdfjs-dist": "^5.4.296",
     "react": "19.2.0",
     "react-dom": "19.2.0"
