@@ -267,12 +267,3 @@ body {
 .btnDanger {
   background: #b91c1c;
 }
-
-
-.rawRows {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.76rem;
-  line-height: 1.3;
-  white-space: pre-wrap;
-  margin: 0;
-}

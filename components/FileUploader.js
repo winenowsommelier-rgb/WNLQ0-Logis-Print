@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parsePOTextToItems, parseRowsByTemplate } from "@/utils/parsePO";
+import { parsePOTextToItems } from "@/utils/parsePO";
 
 let pdfjsLibPromise;
 
@@ -35,46 +35,16 @@ async function extractTextFromPdf(file) {
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
-
-    const rows = [];
-    const tolerance = 2;
-
-    for (const item of content.items) {
-      const text = item.str?.trim();
-      if (!text) {
-        continue;
-      }
-
-      const x = item.transform?.[4] ?? 0;
-      const y = item.transform?.[5] ?? 0;
-
-      let row = rows.find((candidate) => Math.abs(candidate.y - y) <= tolerance);
-      if (!row) {
-        row = { y, words: [] };
-        rows.push(row);
-      }
-
-      row.words.push({ x, text });
-    }
-
-    rows.sort((a, b) => b.y - a.y);
-
-    const pageLines = rows.map((row) =>
-      row.words
-        .sort((a, b) => a.x - b.x)
-        .map((word) => word.text)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim()
-    );
-
-    pageTexts.push(pageLines.join("\n"));
+    const lines = content.items
+      .map((item) => `${item.str}${item.hasEOL ? "\n" : " "}`)
+      .join("");
+    pageTexts.push(lines);
   }
 
-  return { text: pageTexts.join("\n"), rows: pageTexts.flatMap((page) => page.split("\n")).filter(Boolean).map((line) => ({ line })) };
+  return pageTexts.join("\n");
 }
 
-export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtractionReady, lockedTemplate }) {
+export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("No files selected");
 
@@ -98,13 +68,8 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtrac
       const allItems = [];
 
       for (const file of selectedFiles) {
-        const extracted = await extractTextFromPdf(file);
-        const fileItems = lockedTemplate
-          ? parseRowsByTemplate(extracted.rows.map((r) => r.line), file.name, lockedTemplate)
-          : parsePOTextToItems(extracted.text, file.name);
-        if (onExtractionReady) {
-          onExtractionReady((prev) => [...prev, { sourceName: file.name, rows: extracted.rows }]);
-        }
+        const text = await extractTextFromPdf(file);
+        const fileItems = parsePOTextToItems(text, file.name);
         allItems.push(...fileItems);
       }
 
@@ -117,7 +82,7 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtrac
         );
       } else {
         setStatus(
-          `Done. Parsed ${allItems.length} line item(s). Please confirm rows before generating labels${lockedTemplate ? " (template lock mode)" : ""}.`
+          `Done. Parsed ${allItems.length} line item(s). Please confirm rows before generating labels.`
         );
       }
     } catch (error) {

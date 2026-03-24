@@ -1,9 +1,6 @@
-const SKU_REGEX = /^[A-Za-z0-9_-]{8,12}$/;
-const TABLE_HEADER_REGEX = /\bqty\b\s+\bsku\b\s+\bproduct\b/i;
-const IGNORE_LINE_REGEX = /(grand total|shipping|taxes|subtotal|purchase order|bill to|ship to|supplier|manager|order date|estimated delivery)/i;
-const BARCODE_REGEX = /^barcode\s*:\s*([0-9]+)/i;
-const LOCATION_REGEX = /^location\s*:\s*(.+)$/i;
-const META_ITEM_LINE_REGEX = /^(barcode|location)\s*:/i;
+const SKU_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9_-]{8,12}$/;
+const QTY_REGEX = /^\d{1,4}$/;
+const MONEY_REGEX = /^\d+\.\d{1,2}$/;
 const MAX_REASONABLE_QTY = 500;
 
 function normalizeText(text) {
@@ -15,241 +12,103 @@ function normalizeText(text) {
     .filter(Boolean);
 }
 
-function parseCurrencyThb(value) {
-  if (!value) {
+function findSkuIndex(tokens) {
+  return tokens.findIndex((token) => SKU_REGEX.test(token));
+}
+
+function findQuantity(tokens, skuIndex) {
+  const qtyCandidates = [];
+
+  // Strong candidates: immediate neighbors.
+  const before = tokens[skuIndex - 1];
+  const after = tokens[skuIndex + 1];
+  if (before && QTY_REGEX.test(before)) {
+    qtyCandidates.push({ score: 3, value: Number.parseInt(before, 10) });
+  }
+  if (after && QTY_REGEX.test(after)) {
+    qtyCandidates.push({ score: 3, value: Number.parseInt(after, 10) });
+  }
+
+  // Secondary candidates: near SKU and before price columns.
+  const moneyIndex = tokens.findIndex((token) => MONEY_REGEX.test(token));
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!QTY_REGEX.test(tokens[i])) {
+      continue;
+    }
+
+    const value = Number.parseInt(tokens[i], 10);
+    if (value < 1 || value > MAX_REASONABLE_QTY) {
+      continue;
+    }
+
+    const distance = Math.abs(i - skuIndex);
+    const beforePrices = moneyIndex < 0 || i < moneyIndex;
+    if (distance <= 6 && beforePrices) {
+      qtyCandidates.push({ score: 2, value });
+    }
+  }
+
+  if (!qtyCandidates.length) {
     return null;
   }
 
-  const digits = value.replace(/[^\d.]/g, "");
-  if (!digits) {
-    return null;
-  }
-
-  const parsed = Number.parseFloat(digits);
-  return Number.isFinite(parsed) ? parsed : null;
+  qtyCandidates.sort((a, b) => b.score - a.score);
+  return qtyCandidates[0].value;
 }
 
-function cleanProductName(raw) {
-  return raw
-    .replace(/\s+฿?[\d,]+(?:\.\d+)?(?:\s+฿?[\d,]+(?:\.\d+)?)*$/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
+function parseProductName(tokens, skuIndex) {
+  const afterSku = tokens.slice(skuIndex + 1);
 
-function buildItem(data, sourceName) {
-  return {
-    line_no: data.line_no ?? null,
-    qty: data.quantity,
-    quantity: data.quantity,
-    sku: data.sku,
-    product_name: data.productName || data.sku,
-    productName: data.productName || data.sku,
-    unit_price_thb: data.unit_price_thb ?? null,
-    discount_thb: data.discount_thb ?? null,
-    line_total_thb: data.line_total_thb ?? null,
-    barcode: data.barcode || data.sku,
-    location: data.location || null,
-    sourceName
-  };
-}
-
-function parseQtySkuLine(line) {
-  const match = line.match(/^(\d{1,4})\s+([A-Za-z0-9_-]{8,12})(?:\s+(.+))?$/);
-  if (!match) {
-    return null;
-  }
-
-  const quantity = Number.parseInt(match[1], 10);
-  const sku = match[2];
-  const remainder = match[3] || "";
-  const productTail = cleanProductName(remainder);
-
-  const currencyMatches = remainder.match(/฿\s*[\d,]+(?:\.\d+)?/g) || [];
-  const unit_price_thb = currencyMatches.length >= 1 ? parseCurrencyThb(currencyMatches[0]) : null;
-  const line_total_thb = currencyMatches.length >= 2 ? parseCurrencyThb(currencyMatches[currencyMatches.length - 1]) : null;
-
-  if (!SKU_REGEX.test(sku) || !Number.isFinite(quantity) || quantity < 1 || quantity > MAX_REASONABLE_QTY) {
-    return null;
-  }
-
-  return { quantity, sku, productTail, unit_price_thb, line_total_thb };
-}
-
-function parseTableStyle(lines, sourceName) {
-  const itemsMap = new Map();
-  let inItemsSection = false;
-  let current = null;
-  let lineCounter = 0;
-
-  const flushCurrent = () => {
-    if (!current) {
-      return;
-    }
-
-    const key = `${current.sku}|${current.productName || current.sku}`;
-    const existing = itemsMap.get(key);
-    if (existing) {
-      existing.quantity += current.quantity;
-      existing.qty += current.quantity;
-    } else {
-      lineCounter += 1;
-      current.line_no = lineCounter;
-      itemsMap.set(key, buildItem(current, sourceName));
-    }
-
-    current = null;
-  };
-
-  for (const line of lines) {
-    if (TABLE_HEADER_REGEX.test(line)) {
-      inItemsSection = true;
-      continue;
-    }
-
-    if (!inItemsSection) {
-      continue;
-    }
-
-    if (IGNORE_LINE_REGEX.test(line)) {
-      flushCurrent();
-      continue;
-    }
-
-    const qtySku = parseQtySkuLine(line);
-    if (qtySku) {
-      flushCurrent();
-      current = {
-        sku: qtySku.sku,
-        quantity: qtySku.quantity,
-        productName: qtySku.productTail,
-        unit_price_thb: qtySku.unit_price_thb,
-        line_total_thb: qtySku.line_total_thb,
-        barcode: null,
-        location: null
-      };
-      continue;
-    }
-
-    if (!current) {
-      continue;
-    }
-
-    const barcodeMatch = line.match(BARCODE_REGEX);
-    if (barcodeMatch) {
-      current.barcode = barcodeMatch[1];
-      continue;
-    }
-
-    const locationMatch = line.match(LOCATION_REGEX);
-    if (locationMatch) {
-      current.location = locationMatch[1].trim();
-      continue;
-    }
-
-    if (META_ITEM_LINE_REGEX.test(line)) {
-      continue;
-    }
-
-    const continuation = cleanProductName(line);
-    if (continuation) {
-      current.productName = `${current.productName} ${continuation}`.trim();
-    }
-  }
-
-  flushCurrent();
-  return Array.from(itemsMap.values());
-}
-
-function parseColumnSplitStyle(lines, sourceName) {
-  const itemsMap = new Map();
-
-  const add = (sku, quantity, productName) => {
-    const key = `${sku}|${productName || sku}`;
-    if (!itemsMap.has(key)) {
-      itemsMap.set(key, buildItem({ sku, quantity, productName, barcode: null, location: null }, sourceName));
-    }
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-
-    if (IGNORE_LINE_REGEX.test(line) || META_ITEM_LINE_REGEX.test(line)) {
-      continue;
-    }
-
-    if (/^\d{1,4}$/.test(line) && i + 1 < lines.length) {
-      const quantity = Number.parseInt(line, 10);
-      const skuMatch = lines[i + 1].match(/^([A-Za-z0-9_-]{8,12})(?:\s+(.+))?$/);
-      if (!skuMatch || quantity < 1 || quantity > MAX_REASONABLE_QTY) {
-        continue;
-      }
-
-      const sku = skuMatch[1];
-      let productName = cleanProductName(skuMatch[2] || "");
-
-      if (!productName && i + 2 < lines.length) {
-        const candidate = lines[i + 2];
-        if (!/^\d{1,4}$/.test(candidate) && !META_ITEM_LINE_REGEX.test(candidate) && !IGNORE_LINE_REGEX.test(candidate)) {
-          productName = cleanProductName(candidate);
-        }
-      }
-
-      add(sku, quantity, productName);
-    }
-  }
-
-  return Array.from(itemsMap.values());
-}
-
-function parseFallback(lines, sourceName) {
-  const itemsMap = new Map();
-
-  for (const line of lines) {
-    if (META_ITEM_LINE_REGEX.test(line) || IGNORE_LINE_REGEX.test(line)) {
-      continue;
-    }
-
-    const tokens = line.split(" ");
-    for (let i = 0; i < tokens.length - 1; i += 1) {
-      const qtyToken = tokens[i];
-      const skuToken = tokens[i + 1];
-      if (!/^\d{1,4}$/.test(qtyToken) || !SKU_REGEX.test(skuToken)) {
-        continue;
-      }
-
-      const quantity = Number.parseInt(qtyToken, 10);
-      if (quantity < 1 || quantity > MAX_REASONABLE_QTY) {
-        continue;
-      }
-
-      const productName = cleanProductName(tokens.slice(i + 2).join(" "));
-      const key = `${skuToken}|${productName || skuToken}`;
-
-      if (!itemsMap.has(key)) {
-        itemsMap.set(key, buildItem({ sku: skuToken, quantity, productName, barcode: null, location: null }, sourceName));
-      }
-
+  let cutIndex = afterSku.length;
+  for (let i = 0; i < afterSku.length - 1; i += 1) {
+    if (MONEY_REGEX.test(afterSku[i]) && MONEY_REGEX.test(afterSku[i + 1])) {
+      cutIndex = i;
       break;
     }
   }
 
-  return Array.from(itemsMap.values());
+  const productTokens = afterSku.slice(0, cutIndex);
+  return productTokens.join(" ").trim();
 }
 
 export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
   const lines = normalizeText(text);
+  const seen = new Set();
+  const items = [];
 
-  const tableItems = parseTableStyle(lines, sourceName);
-  if (tableItems.length) {
-    return tableItems;
+  for (const line of lines) {
+    const tokens = line.split(" ");
+    const skuIndex = findSkuIndex(tokens);
+
+    if (skuIndex < 0) {
+      continue;
+    }
+
+    const sku = tokens[skuIndex];
+    const quantity = findQuantity(tokens, skuIndex);
+    if (!quantity) {
+      continue;
+    }
+
+    const productName = parseProductName(tokens, skuIndex);
+    const dedupeKey = `${sku}|${quantity}|${productName}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+
+    items.push({
+      sku,
+      productName: productName || sku,
+      quantity,
+      // Barcode for scanners must be SKU only.
+      barcode: sku,
+      sourceName
+    });
   }
 
-  const columnSplitItems = parseColumnSplitStyle(lines, sourceName);
-  if (columnSplitItems.length) {
-    return columnSplitItems;
-  }
-
-  return parseFallback(lines, sourceName);
+  return items;
 }
 
 export function expandItemsToLabels(items) {
@@ -270,34 +129,4 @@ export function expandItemsToLabels(items) {
   }
 
   return labels;
-}
-
-export function parseRowsByTemplate(lines, sourceName = "unknown.pdf", template) {
-  const qtyIndex = Number(template?.qtyIndex ?? 0);
-  const skuIndex = Number(template?.skuIndex ?? 1);
-  const items = [];
-
-  for (const line of lines) {
-    const tokens = line.split(/\s+/).filter(Boolean);
-    if (tokens.length <= Math.max(qtyIndex, skuIndex)) {
-      continue;
-    }
-
-    const qtyToken = tokens[qtyIndex];
-    const skuToken = tokens[skuIndex];
-    if (!/^\d{1,4}$/.test(qtyToken) || !SKU_REGEX.test(skuToken)) {
-      continue;
-    }
-
-    const quantity = Number.parseInt(qtyToken, 10);
-    if (quantity < 1 || quantity > MAX_REASONABLE_QTY) {
-      continue;
-    }
-
-    const start = Math.max(qtyIndex, skuIndex) + 1;
-    const productName = cleanProductName(tokens.slice(start).join(" "));
-    items.push(buildItem({ sku: skuToken, quantity, productName, barcode: null, location: null }, sourceName));
-  }
-
-  return items;
 }
