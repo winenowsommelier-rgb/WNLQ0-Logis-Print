@@ -1,6 +1,7 @@
-const SKU_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9_-]{8,12}$/;
-const QTY_REGEX = /^\d{1,4}$/;
-const MONEY_REGEX = /^\d+\.\d{1,2}$/;
+const SKU_REGEX = /^[A-Za-z0-9_-]{8,12}$/;
+const TABLE_HEADER_REGEX = /\bqty\b\s+\bsku\b\s+\bproduct\b/i;
+const IGNORE_LINE_REGEX = /(grand total|shipping|taxes|subtotal|purchase order|bill to|ship to|supplier|manager|order date|estimated delivery)/i;
+const META_ITEM_LINE_REGEX = /^(barcode|location)\s*:/i;
 const MAX_REASONABLE_QTY = 500;
 
 function normalizeText(text) {
@@ -12,103 +13,146 @@ function normalizeText(text) {
     .filter(Boolean);
 }
 
-function findSkuIndex(tokens) {
-  return tokens.findIndex((token) => SKU_REGEX.test(token));
+function cleanProductName(raw) {
+  return raw
+    .replace(/\s+฿?[\d,]+(?:\.\d+)?(?:\s+฿?[\d,]+(?:\.\d+)?)*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
-function findQuantity(tokens, skuIndex) {
-  const qtyCandidates = [];
+function buildItem(sku, quantity, productName, sourceName) {
+  return {
+    sku,
+    productName: productName || sku,
+    quantity,
+    barcode: sku,
+    sourceName
+  };
+}
 
-  // Strong candidates: immediate neighbors.
-  const before = tokens[skuIndex - 1];
-  const after = tokens[skuIndex + 1];
-  if (before && QTY_REGEX.test(before)) {
-    qtyCandidates.push({ score: 3, value: Number.parseInt(before, 10) });
-  }
-  if (after && QTY_REGEX.test(after)) {
-    qtyCandidates.push({ score: 3, value: Number.parseInt(after, 10) });
-  }
-
-  // Secondary candidates: near SKU and before price columns.
-  const moneyIndex = tokens.findIndex((token) => MONEY_REGEX.test(token));
-  for (let i = 0; i < tokens.length; i += 1) {
-    if (!QTY_REGEX.test(tokens[i])) {
-      continue;
-    }
-
-    const value = Number.parseInt(tokens[i], 10);
-    if (value < 1 || value > MAX_REASONABLE_QTY) {
-      continue;
-    }
-
-    const distance = Math.abs(i - skuIndex);
-    const beforePrices = moneyIndex < 0 || i < moneyIndex;
-    if (distance <= 6 && beforePrices) {
-      qtyCandidates.push({ score: 2, value });
-    }
-  }
-
-  if (!qtyCandidates.length) {
+function parseQtySkuLine(line) {
+  const match = line.match(/^(\d{1,4})\s+([A-Za-z0-9_-]{8,12})(?:\s+(.+))?$/);
+  if (!match) {
     return null;
   }
 
-  qtyCandidates.sort((a, b) => b.score - a.score);
-  return qtyCandidates[0].value;
+  const quantity = Number.parseInt(match[1], 10);
+  const sku = match[2];
+  const productTail = cleanProductName(match[3] || "");
+
+  if (!SKU_REGEX.test(sku) || !Number.isFinite(quantity) || quantity < 1 || quantity > MAX_REASONABLE_QTY) {
+    return null;
+  }
+
+  return { quantity, sku, productTail };
 }
 
-function parseProductName(tokens, skuIndex) {
-  const afterSku = tokens.slice(skuIndex + 1);
+function parseTableStyle(lines, sourceName) {
+  const itemsMap = new Map();
+  let inItemsSection = false;
+  let current = null;
 
-  let cutIndex = afterSku.length;
-  for (let i = 0; i < afterSku.length - 1; i += 1) {
-    if (MONEY_REGEX.test(afterSku[i]) && MONEY_REGEX.test(afterSku[i + 1])) {
-      cutIndex = i;
+  const flushCurrent = () => {
+    if (!current) {
+      return;
+    }
+
+    const key = `${current.sku}|${current.productName || current.sku}`;
+    const existing = itemsMap.get(key);
+    if (existing) {
+      existing.quantity += current.quantity;
+    } else {
+      itemsMap.set(key, buildItem(current.sku, current.quantity, current.productName, sourceName));
+    }
+
+    current = null;
+  };
+
+  for (const line of lines) {
+    if (TABLE_HEADER_REGEX.test(line)) {
+      inItemsSection = true;
+      continue;
+    }
+
+    if (!inItemsSection) {
+      continue;
+    }
+
+    if (IGNORE_LINE_REGEX.test(line)) {
+      flushCurrent();
+      continue;
+    }
+
+    const qtySku = parseQtySkuLine(line);
+    if (qtySku) {
+      flushCurrent();
+      current = {
+        sku: qtySku.sku,
+        quantity: qtySku.quantity,
+        productName: qtySku.productTail
+      };
+      continue;
+    }
+
+    if (!current || META_ITEM_LINE_REGEX.test(line)) {
+      continue;
+    }
+
+    // Product continuation lines in multi-line PO rows.
+    const continuation = cleanProductName(line);
+    if (continuation) {
+      current.productName = `${current.productName} ${continuation}`.trim();
+    }
+  }
+
+  flushCurrent();
+  return Array.from(itemsMap.values());
+}
+
+function parseFallback(lines, sourceName) {
+  const itemsMap = new Map();
+
+  for (const line of lines) {
+    if (META_ITEM_LINE_REGEX.test(line) || IGNORE_LINE_REGEX.test(line)) {
+      continue;
+    }
+
+    const tokens = line.split(" ");
+    for (let i = 0; i < tokens.length - 1; i += 1) {
+      const qtyToken = tokens[i];
+      const skuToken = tokens[i + 1];
+      if (!/^\d{1,4}$/.test(qtyToken) || !SKU_REGEX.test(skuToken)) {
+        continue;
+      }
+
+      const quantity = Number.parseInt(qtyToken, 10);
+      if (quantity < 1 || quantity > MAX_REASONABLE_QTY) {
+        continue;
+      }
+
+      const productName = cleanProductName(tokens.slice(i + 2).join(" "));
+      const key = `${skuToken}|${productName || skuToken}`;
+
+      if (!itemsMap.has(key)) {
+        itemsMap.set(key, buildItem(skuToken, quantity, productName, sourceName));
+      }
+
       break;
     }
   }
 
-  const productTokens = afterSku.slice(0, cutIndex);
-  return productTokens.join(" ").trim();
+  return Array.from(itemsMap.values());
 }
 
 export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
   const lines = normalizeText(text);
-  const seen = new Set();
-  const items = [];
 
-  for (const line of lines) {
-    const tokens = line.split(" ");
-    const skuIndex = findSkuIndex(tokens);
-
-    if (skuIndex < 0) {
-      continue;
-    }
-
-    const sku = tokens[skuIndex];
-    const quantity = findQuantity(tokens, skuIndex);
-    if (!quantity) {
-      continue;
-    }
-
-    const productName = parseProductName(tokens, skuIndex);
-    const dedupeKey = `${sku}|${quantity}|${productName}`;
-    if (seen.has(dedupeKey)) {
-      continue;
-    }
-
-    seen.add(dedupeKey);
-
-    items.push({
-      sku,
-      productName: productName || sku,
-      quantity,
-      // Barcode for scanners must be SKU only.
-      barcode: sku,
-      sourceName
-    });
+  const tableItems = parseTableStyle(lines, sourceName);
+  if (tableItems.length) {
+    return tableItems;
   }
 
-  return items;
+  return parseFallback(lines, sourceName);
 }
 
 export function expandItemsToLabels(items) {
