@@ -7,7 +7,17 @@ let pdfjsLibPromise;
 
 async function getPdfLib() {
   if (!pdfjsLibPromise) {
-    pdfjsLibPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+    pdfjsLibPromise = import("pdfjs-dist/legacy/build/pdf.mjs").then((pdfjsLib) => {
+      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        // Preferred local bundled worker path.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+          import.meta.url
+        ).toString();
+      }
+
+      return pdfjsLib;
+    });
   }
 
   return pdfjsLibPromise;
@@ -18,8 +28,13 @@ async function extractTextFromPdf(file) {
   const data = new Uint8Array(arrayBuffer);
   const pdfjsLib = await getPdfLib();
 
-  // `disableWorker` avoids worker URL issues in constrained runtime environments.
-  const pdf = await pdfjsLib.getDocument({ data, disableWorker: true }).promise;
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument({ data }).promise;
+  } catch (workerError) {
+    // Fallback mode for environments where worker boot fails.
+    pdf = await pdfjsLib.getDocument({ data, disableWorker: true }).promise;
+  }
 
   const pageTexts = [];
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
@@ -69,7 +84,7 @@ export default function FileUploader({ onLabelsParsed, onFilesProcessed }) {
 
       if (!labels.length) {
         setStatus(
-          `Parsed ${selectedFiles.length} file(s), but no matching PO lines were found. Verify format: Qty SKU ProductName Price Total.`
+          `Parsed ${selectedFiles.length} file(s), but no SKU rows were found. Expected SKU token length: 8-12 characters.`
         );
       } else {
         setStatus(

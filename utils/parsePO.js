@@ -1,9 +1,6 @@
-const BARCODE_REGEX = /Barcode\s*:\s*([A-Za-z0-9-]+)/i;
-
-const STRICT_PATTERNS = [
-  /^(\d+)\s+([A-Za-z0-9][A-Za-z0-9._-]{2,})\s+(.+?)\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)(?:\s+Barcode\s*:\s*([A-Za-z0-9-]+))?$/i,
-  /^([A-Za-z0-9][A-Za-z0-9._-]{2,})\s+(.+?)\s+(\d+)\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)(?:\s+Barcode\s*:\s*([A-Za-z0-9-]+))?$/i
-];
+const SKU_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9_-]{8,12}$/;
+const QTY_REGEX = /^\d{1,4}$/;
+const MONEY_REGEX = /^\d+\.\d{1,2}$/;
 
 function normalizeText(text) {
   return text
@@ -14,101 +11,78 @@ function normalizeText(text) {
     .filter(Boolean);
 }
 
-function looksLikeSku(token) {
-  return /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9._-]{3,}$/.test(token);
+function findSkuIndex(tokens) {
+  return tokens.findIndex((token) => SKU_REGEX.test(token));
 }
 
-function extractBarcode(lines, startIndex, fallbackKey) {
-  for (let i = startIndex; i < Math.min(startIndex + 8, lines.length); i += 1) {
-    const barcodeMatch = lines[i].match(BARCODE_REGEX);
-    if (barcodeMatch) {
-      return barcodeMatch[1];
+function parseQuantity(tokens, skuIndex) {
+  const before = skuIndex > 0 ? tokens[skuIndex - 1] : null;
+  const after = skuIndex + 1 < tokens.length ? tokens[skuIndex + 1] : null;
+
+  if (before && QTY_REGEX.test(before)) {
+    return Number.parseInt(before, 10);
+  }
+
+  if (after && QTY_REGEX.test(after)) {
+    return Number.parseInt(after, 10);
+  }
+
+  // Fallback: for sku-first rows, qty often appears near the end before price/total.
+  const afterSku = tokens.slice(skuIndex + 1);
+  const moneyIndex = afterSku.findIndex((token) => MONEY_REGEX.test(token));
+  const qtySearchTokens = moneyIndex >= 0 ? afterSku.slice(0, moneyIndex) : afterSku;
+
+  for (let i = qtySearchTokens.length - 1; i >= 0; i -= 1) {
+    if (QTY_REGEX.test(qtySearchTokens[i])) {
+      return Number.parseInt(qtySearchTokens[i], 10);
     }
   }
 
-  return fallbackKey;
+  return 1;
 }
 
-function parseByStrictPatterns(line) {
-  for (const pattern of STRICT_PATTERNS) {
-    const match = line.match(pattern);
-    if (!match) {
-      continue;
+function parseProductName(tokens, skuIndex) {
+  const afterSku = tokens.slice(skuIndex + 1);
+
+  // If PO row contains trailing price/total values, drop them from product name.
+  let cutIndex = afterSku.length;
+  for (let i = 0; i < afterSku.length - 1; i += 1) {
+    if (MONEY_REGEX.test(afterSku[i]) && MONEY_REGEX.test(afterSku[i + 1])) {
+      cutIndex = i;
+      break;
     }
-
-    if (pattern === STRICT_PATTERNS[0]) {
-      const [, qtyRaw, sku, productName, , , inlineBarcode] = match;
-      return { qtyRaw, sku, productName, inlineBarcode };
-    }
-
-    const [, sku, productName, qtyRaw, , , inlineBarcode] = match;
-    return { qtyRaw, sku, productName, inlineBarcode };
   }
 
-  return null;
-}
-
-function parseByHeuristic(line) {
-  const tokens = line.split(" ");
-
-  const skuIndex = tokens.findIndex((token) => looksLikeSku(token));
-  if (skuIndex < 0) {
-    return null;
-  }
-
-  const qtyBefore = skuIndex > 0 && /^\d+$/.test(tokens[skuIndex - 1]) ? tokens[skuIndex - 1] : null;
-  const qtyAfter = skuIndex + 1 < tokens.length && /^\d+$/.test(tokens[skuIndex + 1]) ? tokens[skuIndex + 1] : null;
-  const qtyRaw = qtyBefore || qtyAfter;
-
-  if (!qtyRaw) {
-    return null;
-  }
-
-  const qtyIndex = qtyBefore ? skuIndex - 1 : skuIndex + 1;
-  const tail = tokens.slice(Math.max(skuIndex, qtyIndex) + 1);
-
-  // Keep product text before obvious price/amount segments.
-  const priceStart = tail.findIndex((token) => /^\d+(?:\.\d{1,2})?$/.test(token));
-  const productTokens = priceStart >= 0 ? tail.slice(0, priceStart) : tail;
-
-  const productName = productTokens.join(" ").trim();
-  if (!productName) {
-    return null;
-  }
-
-  return {
-    qtyRaw,
-    sku: tokens[skuIndex],
-    productName,
-    inlineBarcode: null
-  };
+  const productTokens = afterSku.slice(0, cutIndex);
+  return productTokens.join(" ").trim();
 }
 
 export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
   const lines = normalizeText(text);
   const items = [];
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
+  for (const line of lines) {
+    const tokens = line.split(" ");
+    const skuIndex = findSkuIndex(tokens);
 
-    const strictMatch = parseByStrictPatterns(line);
-    const heuristicMatch = strictMatch || parseByHeuristic(line);
-
-    if (!heuristicMatch) {
+    if (skuIndex < 0) {
       continue;
     }
 
-    const { qtyRaw, sku, productName, inlineBarcode } = heuristicMatch;
-    const quantity = Number.parseInt(qtyRaw, 10);
-    if (!Number.isFinite(quantity) || quantity < 1) {
+    const sku = tokens[skuIndex];
+    const quantity = parseQuantity(tokens, skuIndex);
+    const productName = parseProductName(tokens, skuIndex);
+
+    if (!productName) {
       continue;
     }
 
     items.push({
       sku,
-      productName: productName.trim(),
+      productName,
       quantity,
-      barcode: inlineBarcode || extractBarcode(lines, index, sku),
+      // Barcode for scanners must be SKU only.
+      barcode: sku,
       sourceName
     });
   }
@@ -122,10 +96,10 @@ export function expandItemsToLabels(items) {
   for (const item of items) {
     for (let copy = 0; copy < item.quantity; copy += 1) {
       labels.push({
-        id: `${item.sourceName}-${item.sku}-${item.barcode}-${copy}`,
+        id: `${item.sourceName}-${item.sku}-${copy}`,
         sku: item.sku,
         productName: item.productName,
-        barcode: item.barcode,
+        barcode: item.sku,
         quantity: item.quantity,
         copyNumber: copy + 1,
         sourceName: item.sourceName

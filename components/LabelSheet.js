@@ -11,14 +11,14 @@ const LabelCard = memo(function LabelCard({ label }) {
       return;
     }
 
-    JsBarcode(barcodeRef.current, label.barcode, {
+    JsBarcode(barcodeRef.current, label.sku, {
       format: "CODE128",
       width: 1.6,
       height: 30,
       displayValue: false,
       margin: 0
     });
-  }, [label.barcode]);
+  }, [label.sku]);
 
   return (
     <article className="label premiumLabel">
@@ -30,7 +30,7 @@ const LabelCard = memo(function LabelCard({ label }) {
       <div className="labelName" title={label.productName}>{label.productName}</div>
 
       <div className="barcodeWrap">
-        <svg ref={barcodeRef} aria-label={`barcode-${label.barcode}`} />
+        <svg ref={barcodeRef} aria-label={`barcode-${label.sku}`} />
       </div>
 
       <footer className="labelFooter">{label.sourceName}</footer>
