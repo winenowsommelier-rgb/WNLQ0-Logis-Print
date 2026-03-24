@@ -7,25 +7,19 @@ let pdfjsLibPromise;
 
 async function getPdfLib() {
   if (!pdfjsLibPromise) {
-    pdfjsLibPromise = import("pdfjs-dist").then((pdfjsLib) => {
-      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url
-        ).toString();
-      }
-
-      return pdfjsLib;
-    });
+    pdfjsLibPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
   }
 
   return pdfjsLibPromise;
 }
 
 async function extractTextFromPdf(file) {
-  const data = await file.arrayBuffer();
+  const arrayBuffer = await file.arrayBuffer();
+  const data = new Uint8Array(arrayBuffer);
   const pdfjsLib = await getPdfLib();
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
+
+  // `disableWorker` avoids worker URL issues in constrained runtime environments.
+  const pdf = await pdfjsLib.getDocument({ data, disableWorker: true }).promise;
 
   const pageTexts = [];
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
@@ -73,12 +67,19 @@ export default function FileUploader({ onLabelsParsed, onFilesProcessed }) {
       onFilesProcessed(selectedFiles.map((file) => file.name));
       onLabelsParsed(labels);
 
-      setStatus(
-        `Done. Parsed ${allItems.length} line items from ${selectedFiles.length} PO(s) into ${labels.length} labels.`
-      );
+      if (!labels.length) {
+        setStatus(
+          `Parsed ${selectedFiles.length} file(s), but no matching PO lines were found. Verify format: Qty SKU ProductName Price Total.`
+        );
+      } else {
+        setStatus(
+          `Done. Parsed ${allItems.length} line items from ${selectedFiles.length} PO(s) into ${labels.length} labels.`
+        );
+      }
     } catch (error) {
       console.error(error);
-      setStatus("Failed to parse one or more PDFs. Check file format and try again.");
+      const message = error instanceof Error ? error.message : "Unknown PDF parse error";
+      setStatus(`Failed to parse PDF(s): ${message}`);
       onLabelsParsed([]);
       onFilesProcessed([]);
     } finally {
