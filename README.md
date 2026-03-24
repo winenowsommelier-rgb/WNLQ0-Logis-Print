@@ -6,6 +6,7 @@ Production-ready Next.js App Router application for warehouse label printing fro
 
 - Multi-file PDF upload (merge into one batch).
 - Review/confirm parsed SKU and qty rows before generating labels.
+- Debug mode: download extracted rows JSON and apply saved qty/sku template mappings.
 - Clear current batch with one click.
 - PDF parsing with `pdfjs-dist`.
 - Extracts line item pattern: `Qty SKU ProductName Price Total`.

@@ -71,10 +71,10 @@ async function extractTextFromPdf(file) {
     pageTexts.push(pageLines.join("\n"));
   }
 
-  return pageTexts.join("\n");
+  return { text: pageTexts.join("\n"), rows: pageTexts.flatMap((page) => page.split("\n")).filter(Boolean).map((line) => ({ line })) };
 }
 
-export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
+export default function FileUploader({ onItemsParsed, onFilesProcessed, onExtractionReady }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("No files selected");
 
@@ -98,8 +98,11 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
       const allItems = [];
 
       for (const file of selectedFiles) {
-        const text = await extractTextFromPdf(file);
-        const fileItems = parsePOTextToItems(text, file.name);
+        const extracted = await extractTextFromPdf(file);
+        const fileItems = parsePOTextToItems(extracted.text, file.name);
+        if (onExtractionReady) {
+          onExtractionReady((prev) => [...prev, { sourceName: file.name, rows: extracted.rows }]);
+        }
         allItems.push(...fileItems);
       }
 

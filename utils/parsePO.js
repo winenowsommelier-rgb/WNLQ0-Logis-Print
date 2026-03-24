@@ -223,3 +223,34 @@ export function expandItemsToLabels(items) {
 
   return labels;
 }
+
+
+export function parseRowsByTemplate(lines, sourceName = "unknown.pdf", template) {
+  const qtyIndex = Number(template?.qtyIndex ?? 0);
+  const skuIndex = Number(template?.skuIndex ?? 1);
+  const items = [];
+
+  for (const line of lines) {
+    const tokens = line.split(/\s+/).filter(Boolean);
+    if (tokens.length <= Math.max(qtyIndex, skuIndex)) {
+      continue;
+    }
+
+    const qtyToken = tokens[qtyIndex];
+    const skuToken = tokens[skuIndex];
+    if (!/^\d{1,4}$/.test(qtyToken) || !SKU_REGEX.test(skuToken)) {
+      continue;
+    }
+
+    const quantity = Number.parseInt(qtyToken, 10);
+    if (quantity < 1 || quantity > MAX_REASONABLE_QTY) {
+      continue;
+    }
+
+    const start = Math.max(qtyIndex, skuIndex) + 1;
+    const productName = cleanProductName(tokens.slice(start).join(" "));
+    items.push(buildItem(skuToken, quantity, productName, sourceName));
+  }
+
+  return items;
+}

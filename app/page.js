@@ -4,11 +4,14 @@ import { useMemo, useState } from "react";
 import FileUploader from "@/components/FileUploader";
 import LabelSheet from "@/components/LabelSheet";
 import ParseReviewTable from "@/components/ParseReviewTable";
+import ExtractionDebugger from "@/components/ExtractionDebugger";
+import { expandItemsToLabels } from "@/utils/parsePO";
 
 export default function HomePage() {
   const [labels, setLabels] = useState([]);
   const [parsedItems, setParsedItems] = useState([]);
   const [sourceFiles, setSourceFiles] = useState([]);
+  const [extractionBatches, setExtractionBatches] = useState([]);
 
   const summary = useMemo(() => {
     const skuSet = new Set(labels.map((label) => label.sku));
@@ -34,10 +37,20 @@ export default function HomePage() {
           onItemsParsed={(items) => {
             setParsedItems(items);
             setLabels([]);
+            setExtractionBatches([]);
           }}
           onFilesProcessed={setSourceFiles}
+          onExtractionReady={setExtractionBatches}
         />
       </section>
+
+      <ExtractionDebugger
+        batches={extractionBatches}
+        onApplyTemplate={(items) => {
+          setParsedItems(items);
+          setLabels(expandItemsToLabels(items));
+        }}
+      />
 
       <ParseReviewTable
         items={parsedItems}
