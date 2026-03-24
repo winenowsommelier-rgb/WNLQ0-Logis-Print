@@ -7,17 +7,7 @@ let pdfjsLibPromise;
 
 async function getPdfLib() {
   if (!pdfjsLibPromise) {
-    pdfjsLibPromise = import("pdfjs-dist/legacy/build/pdf.mjs").then((pdfjsLib) => {
-      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        // Preferred local bundled worker path.
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-          import.meta.url
-        ).toString();
-      }
-
-      return pdfjsLib;
-    });
+    pdfjsLibPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
   }
 
   return pdfjsLibPromise;
@@ -28,12 +18,17 @@ async function extractTextFromPdf(file) {
   const data = new Uint8Array(arrayBuffer);
   const pdfjsLib = await getPdfLib();
 
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    // Use CDN worker path to avoid bundler/runtime worker resolution failures.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`;
+  }
+
   let pdf;
   try {
     pdf = await pdfjsLib.getDocument({ data }).promise;
   } catch (workerError) {
     // Fallback mode for environments where worker boot fails.
-    pdf = await pdfjsLib.getDocument({ data, disableWorker: true }).promise;
+    pdf = await pdfjsLib.getDocument({ data, disableWorker: true, workerSrc: pdfjsLib.GlobalWorkerOptions.workerSrc }).promise;
   }
 
   const pageTexts = [];
