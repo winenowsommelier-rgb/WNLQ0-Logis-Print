@@ -109,6 +109,50 @@ function parseTableStyle(lines, sourceName) {
   return Array.from(itemsMap.values());
 }
 
+
+function parseColumnSplitStyle(lines, sourceName) {
+  const itemsMap = new Map();
+
+  const add = (sku, quantity, productName) => {
+    const key = `${sku}|${productName || sku}`;
+    if (!itemsMap.has(key)) {
+      itemsMap.set(key, buildItem(sku, quantity, productName, sourceName));
+    }
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    if (IGNORE_LINE_REGEX.test(line) || META_ITEM_LINE_REGEX.test(line)) {
+      continue;
+    }
+
+    // Case: qty and sku are split into consecutive lines.
+    if (/^\d{1,4}$/.test(line) && i + 1 < lines.length) {
+      const quantity = Number.parseInt(line, 10);
+      const skuMatch = lines[i + 1].match(/^([A-Za-z0-9_-]{8,12})(?:\s+(.+))?$/);
+      if (!skuMatch || quantity < 1 || quantity > MAX_REASONABLE_QTY) {
+        continue;
+      }
+
+      const sku = skuMatch[1];
+      let productName = cleanProductName(skuMatch[2] || "");
+
+      if (!productName && i + 2 < lines.length) {
+        const candidate = lines[i + 2];
+        if (!/^\d{1,4}$/.test(candidate) && !META_ITEM_LINE_REGEX.test(candidate) && !IGNORE_LINE_REGEX.test(candidate)) {
+          productName = cleanProductName(candidate);
+        }
+      }
+
+      add(sku, quantity, productName);
+      continue;
+    }
+  }
+
+  return Array.from(itemsMap.values());
+}
+
 function parseFallback(lines, sourceName) {
   const itemsMap = new Map();
 
@@ -150,6 +194,11 @@ export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
   const tableItems = parseTableStyle(lines, sourceName);
   if (tableItems.length) {
     return tableItems;
+  }
+
+  const columnSplitItems = parseColumnSplitStyle(lines, sourceName);
+  if (columnSplitItems.length) {
+    return columnSplitItems;
   }
 
   return parseFallback(lines, sourceName);

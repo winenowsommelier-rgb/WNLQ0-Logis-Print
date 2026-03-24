@@ -65,3 +65,23 @@ test('expands labels strictly by qty and barcode uses SKU only', () => {
   assert.equal(labels[0].barcode, 'WRW5942GE');
   assert.equal(labels[1].copyNumber, 2);
 });
+
+
+test('parses column-split rows where qty and sku are on separate lines', () => {
+  const text = `
+Qty SKU Product
+12
+WSP1104BU
+Moet & Chandon Brut Imperial (750 ml)
+Barcode: 3185370001233
+12
+WSP1048BU
+Moet & Chandon Ice Imperial (750 ml)
+`;
+
+  const items = parsePOTextToItems(text, 'po-split.pdf');
+
+  assert.equal(items.length, 2);
+  assert.deepEqual(items.map((item) => item.sku), ['WSP1104BU', 'WSP1048BU']);
+  assert.deepEqual(items.map((item) => item.quantity), [12, 12]);
+});
