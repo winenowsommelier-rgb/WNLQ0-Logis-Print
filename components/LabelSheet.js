@@ -21,15 +21,19 @@ const LabelCard = memo(function LabelCard({ label }) {
   }, [label.barcode]);
 
   return (
-    <article className="label">
-      <div className="labelSku">{label.sku}</div>
-      <div className="labelName">{label.productName}</div>
-      <div className="labelQty">
-        Qty {label.copyNumber}/{label.quantity}
-      </div>
+    <article className="label premiumLabel">
+      <header className="labelHeader">
+        <div className="labelSku" title={label.sku}>{label.sku}</div>
+        <div className="labelQtyPill">{label.copyNumber}/{label.quantity}</div>
+      </header>
+
+      <div className="labelName" title={label.productName}>{label.productName}</div>
+
       <div className="barcodeWrap">
         <svg ref={barcodeRef} aria-label={`barcode-${label.barcode}`} />
       </div>
+
+      <footer className="labelFooter">{label.sourceName}</footer>
     </article>
   );
 });
@@ -38,7 +42,7 @@ export default function LabelSheet({ labels }) {
   return (
     <section>
       <h2>Label Preview</h2>
-      <p className="small">3 labels per row. Physical label size: 32mm × 25mm. Print at 100% scale.</p>
+      <p className="small">Premium compact layout: bold SKU, high-contrast barcode, clear quantity badge.</p>
 
       <div className="previewWrap">
         {labels.length ? (

@@ -8,6 +8,7 @@ Production-ready Next.js App Router application for warehouse label printing fro
 - Clear current batch with one click.
 - PDF parsing with `pdfjs-dist`.
 - Extracts line item pattern: `Qty SKU ProductName Price Total`.
+- Supports both `Qty SKU Name Price Total` and `SKU Name Qty Price Total` PO row styles.
 - Extracts barcode from `Barcode: XXXXX` nearby lines.
 - Expands labels to one-per-quantity.
 - Barcode generation with JsBarcode CODE128 (`width: 1.6`, `height: 30`, no text).
