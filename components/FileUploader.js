@@ -77,7 +77,7 @@ async function extractTextFromPdf(file) {
 
 export default function FileUploader({ onBatchParsed }) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [status, setStatus] = useState("No files selected");
+  const [status, setStatus] = useState("Awaiting purchase order files.");
   const [debugText, setDebugText] = useState("");
 
   const resetBatch = () => {
@@ -88,7 +88,7 @@ export default function FileUploader({ onBatchParsed }) {
       validation: buildBatchValidation([], [])
     });
     setDebugText("");
-    setStatus("Cleared current print batch.");
+    setStatus("Session cleared. Upload a new purchase order set to continue.");
   };
 
   const onFileChange = async (event) => {
@@ -99,7 +99,7 @@ export default function FileUploader({ onBatchParsed }) {
     }
 
     setIsProcessing(true);
-    setStatus(`Processing ${selectedFiles.length} file(s)...`);
+    setStatus(`Processing ${selectedFiles.length} purchase order file(s)...`);
 
     try {
       const allItems = [];
@@ -125,14 +125,14 @@ export default function FileUploader({ onBatchParsed }) {
       if (!allItems.length) {
         setDebugText(allText);
         setStatus(
-          `Parsed ${selectedFiles.length} file(s), but no valid item rows were found. Check the extracted text below.`
+          `The upload completed, but no usable item rows were detected. Review the extracted text below.`
         );
       } else {
         setDebugText("");
         setStatus(
           validation.warnings.length
-            ? `Parsed ${allItems.length} line item(s) with ${validation.warnings.length} warning(s). Review and confirm before generating labels.`
-            : `Done. Parsed ${allItems.length} line item(s). Review and confirm before generating labels.`
+            ? `${allItems.length} line item(s) detected with ${validation.warnings.length} warning(s). Review the batch before releasing labels.`
+            : `${allItems.length} line item(s) detected. Review the batch before releasing labels.`
         );
       }
     } catch (error) {
@@ -158,7 +158,7 @@ export default function FileUploader({ onBatchParsed }) {
     <div>
       <div className="controls screenOnly">
         <label className="fileInput btn" htmlFor="po-upload">
-          Upload PO PDFs
+          Upload Purchase Orders
         </label>
         <input
           id="po-upload"
@@ -169,13 +169,13 @@ export default function FileUploader({ onBatchParsed }) {
           hidden
         />
         <button className="btn btnSecondary" type="button" onClick={resetBatch} disabled={isProcessing}>
-          Clear Batch
+          Reset Session
         </button>
       </div>
       <p className="small">{status}</p>
       {debugText ? (
         <details className="debugSection">
-          <summary>Extracted Text (for debugging)</summary>
+          <summary>Extraction Log</summary>
           <pre className="debugText">{debugText}</pre>
         </details>
       ) : null}

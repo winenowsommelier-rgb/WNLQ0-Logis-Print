@@ -5,10 +5,11 @@ export default function ParsedItemsTable({ items, validation }) {
     <section>
       <div className="sectionHeader">
         <div>
-          <h2>Extraction Validation</h2>
+          <div className="sectionEyebrow">Validation</div>
+          <h2>Extracted Batch Review</h2>
           <p className="small">
-            Review the parsed PO rows before printing. The sample template detected here is
-            `qty sku product price total`.
+            Inspect the interpreted rows before release. Template detection helps surface how the parser
+            understood each supplier layout.
           </p>
         </div>
       </div>
@@ -60,7 +61,7 @@ export default function ParsedItemsTable({ items, validation }) {
             </tbody>
           </table>
         ) : (
-          <p className="small">Upload a purchase order PDF to see parsed rows and validation warnings.</p>
+          <p className="small">Upload a purchase order set to review parsed rows, warnings, and source files.</p>
         )}
       </div>
     </section>

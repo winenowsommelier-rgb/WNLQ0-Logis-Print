@@ -52,9 +52,11 @@ export default function ParseReviewTable({ items, onConfirm }) {
 
   return (
     <section className="card">
-      <h2>Confirm parsed SKU + quantity</h2>
+      <div className="sectionEyebrow">Confirmation</div>
+      <h2>Release Candidate Review</h2>
       <p className="small">
-        Review and fix rows before generating labels. Only rows with SKU (3-14 chars) and qty &gt; 0 are used.
+        Refine the extracted rows before labels are generated. Only rows with a valid SKU and quantity
+        greater than zero are released into the print batch.
       </p>
 
       <div className="tableWrap">
@@ -107,7 +109,7 @@ export default function ParseReviewTable({ items, onConfirm }) {
       <div className="controls screenOnly">
         <span className="small">Rows: {rows.length} · Total Qty: {totalQty}</span>
         <button className="btn" type="button" onClick={confirm}>
-          Confirm and Generate Labels
+          Release To Label Preview
         </button>
       </div>
     </section>
