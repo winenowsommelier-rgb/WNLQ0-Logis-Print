@@ -214,33 +214,47 @@ function buildExportHtml(labels, { autoPrint = false } = {}) {
     ${pageMarkup}
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.1/dist/JsBarcode.all.min.js"></script>
     <script>
-      document.querySelectorAll('.barcodeWrap svg').forEach((node) => {
-        const barcode = node.getAttribute('aria-label')?.replace('barcode-', '');
-        if (!barcode || !window.JsBarcode) return;
+      const renderBarcodes = () => {
+        if (!window.JsBarcode) return false;
 
-        window.JsBarcode(node, barcode, {
-          format: 'CODE128',
-          width: 1.18,
-          height: 22,
-          displayValue: false,
-          margin: 0
+        document.querySelectorAll('.barcodeWrap svg').forEach((node) => {
+          const barcode = node.getAttribute('aria-label')?.replace('barcode-', '');
+          if (!barcode) return;
+
+          window.JsBarcode(node, barcode, {
+            format: 'CODE128',
+            width: 1.18,
+            height: 22,
+            displayValue: false,
+            margin: 0
+          });
         });
-      });
+
+        return true;
+      };
     </script>
     ${
       autoPrint
         ? `<script>
-      const closeWindow = () => {
-        window.close();
-      };
-
-      window.addEventListener('afterprint', closeWindow);
       window.addEventListener('load', () => {
-        setTimeout(() => window.print(), 150);
-        setTimeout(closeWindow, 800);
+        const ready = renderBarcodes();
+        if (!ready) return;
+
+        window.addEventListener('afterprint', () => {
+          window.close();
+        }, { once: true });
+
+        setTimeout(() => {
+          window.focus();
+          window.print();
+        }, 120);
       });
     </script>`
-        : ""
+        : `<script>
+      window.addEventListener('load', () => {
+        renderBarcodes();
+      });
+    </script>`
     }
   </body>
 </html>`;
@@ -305,7 +319,7 @@ export default function LabelSheet({ labels }) {
       return;
     }
 
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+    const printWindow = window.open("", "_blank");
     if (!printWindow) {
       return;
     }
