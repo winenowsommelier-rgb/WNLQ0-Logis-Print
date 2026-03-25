@@ -1,10 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { expandItemsToLabels } from "@/utils/parsePO";
 
 export default function ParseReviewTable({ items, onConfirm }) {
   const [rows, setRows] = useState(items);
+
+  // Sync rows when items prop changes (new PDF parse)
+  useEffect(() => {
+    setRows(items);
+  }, [items]);
 
   const totalQty = useMemo(
     () => rows.reduce((acc, row) => acc + (Number.isFinite(row.quantity) ? row.quantity : 0), 0),
@@ -33,7 +38,7 @@ export default function ParseReviewTable({ items, onConfirm }) {
 
   const confirm = () => {
     const validRows = rows.filter(
-      (row) => row.sku && row.sku.length >= 8 && row.sku.length <= 12 && row.quantity > 0
+      (row) => row.sku && row.sku.length >= 3 && row.sku.length <= 14 && row.quantity > 0
     );
     onConfirm({
       items: validRows,
@@ -49,7 +54,7 @@ export default function ParseReviewTable({ items, onConfirm }) {
     <section className="card">
       <h2>Confirm parsed SKU + quantity</h2>
       <p className="small">
-        Review and fix rows before generating labels. Only rows with SKU (8-12 chars) and qty &gt; 0 are used.
+        Review and fix rows before generating labels. Only rows with SKU (3-14 chars) and qty &gt; 0 are used.
       </p>
 
       <div className="tableWrap">

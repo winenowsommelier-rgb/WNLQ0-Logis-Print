@@ -47,6 +47,7 @@ async function extractTextFromPdf(file) {
 export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("No files selected");
+  const [debugText, setDebugText] = useState(""); // Add debug text state
 
   const resetBatch = () => {
     onItemsParsed([]);
@@ -66,10 +67,14 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
 
     try {
       const allItems = [];
+      let allText = "";
 
       for (const file of selectedFiles) {
         const text = await extractTextFromPdf(file);
+        console.log(`Extracted text from ${file.name}:`, text); // Debug log
+        allText += `=== ${file.name} ===\n${text}\n\n`;
         const fileItems = parsePOTextToItems(text, file.name);
+        console.log(`Parsed items from ${file.name}:`, fileItems); // Debug log
         allItems.push(...fileItems);
       }
 
@@ -77,10 +82,12 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
       onItemsParsed(allItems);
 
       if (!allItems.length) {
+        setDebugText(allText); // Show extracted text for debugging
         setStatus(
-          `Parsed ${selectedFiles.length} file(s), but no SKU rows were found. Expected SKU token length: 8-12 characters.`
+          `Parsed ${selectedFiles.length} file(s), but no SKU rows were found. Expected SKU token length: 8-12 characters. Check the extracted text below.`
         );
       } else {
+        setDebugText(""); // Clear debug text on success
         setStatus(
           `Done. Parsed ${allItems.length} line item(s). Please confirm rows before generating labels.`
         );
@@ -119,6 +126,12 @@ export default function FileUploader({ onItemsParsed, onFilesProcessed }) {
         </button>
       </div>
       <p className="small">{status}</p>
+      {debugText && (
+        <details className="debugSection">
+          <summary>Extracted Text (for debugging)</summary>
+          <pre className="debugText">{debugText}</pre>
+        </details>
+      )}
     </div>
   );
 }

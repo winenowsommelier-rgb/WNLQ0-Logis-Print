@@ -267,3 +267,29 @@ body {
 .btnDanger {
   background: #b91c1c;
 }
+
+.debugSection {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.debugSection summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.debugText {
+  background: #f8f9fa;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  max-height: 400px;
+  overflow: auto;
+  margin-top: 0.5rem;
+}

@@ -1,7 +1,5 @@
-const SKU_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9_-]{8,12}$/;
-const QTY_REGEX = /^\d{1,4}$/;
-const MONEY_REGEX = /^\d+\.\d{1,2}$/;
-const MAX_REASONABLE_QTY = 500;
+const ITEM_LINE_REGEX = /^(\d+)\s+([A-Z0-9_-]{3,})\s+(.+?)\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)(?:\s+Barcode\s*:\s*([A-Za-z0-9-]+))?$/i;
+const BARCODE_REGEX = /Barcode\s*:\s*([A-Za-z0-9-]+)/i;
 
 function normalizeText(text) {
   return text
@@ -12,86 +10,106 @@ function normalizeText(text) {
     .filter(Boolean);
 }
 
-function findSkuIndex(tokens) {
-  return tokens.findIndex((token) => SKU_REGEX.test(token));
-}
+// Flexible line parser for non-standard PO formats
+function parseFlexibleLine(line) {
+  const tokens = line.split(/\s+/);
+  if (tokens.length < 3) return null;
 
-function findQuantity(tokens, skuIndex) {
-  const qtyCandidates = [];
+  // Try to find patterns: [qty] [sku] [product...] [price] [total]
+  let qtyIdx = -1;
+  let skuIdx = -1;
+  let priceIdx = -1;
 
-  // Strong candidates: immediate neighbors.
-  const before = tokens[skuIndex - 1];
-  const after = tokens[skuIndex + 1];
-  if (before && QTY_REGEX.test(before)) {
-    qtyCandidates.push({ score: 3, value: Number.parseInt(before, 10) });
-  }
-  if (after && QTY_REGEX.test(after)) {
-    qtyCandidates.push({ score: 3, value: Number.parseInt(after, 10) });
-  }
-
-  // Secondary candidates: near SKU and before price columns.
-  const moneyIndex = tokens.findIndex((token) => MONEY_REGEX.test(token));
-  for (let i = 0; i < tokens.length; i += 1) {
-    if (!QTY_REGEX.test(tokens[i])) {
-      continue;
-    }
-
-    const value = Number.parseInt(tokens[i], 10);
-    if (value < 1 || value > MAX_REASONABLE_QTY) {
-      continue;
-    }
-
-    const distance = Math.abs(i - skuIndex);
-    const beforePrices = moneyIndex < 0 || i < moneyIndex;
-    if (distance <= 6 && beforePrices) {
-      qtyCandidates.push({ score: 2, value });
-    }
-  }
-
-  if (!qtyCandidates.length) {
-    return null;
-  }
-
-  qtyCandidates.sort((a, b) => b.score - a.score);
-  return qtyCandidates[0].value;
-}
-
-function parseProductName(tokens, skuIndex) {
-  const afterSku = tokens.slice(skuIndex + 1);
-
-  let cutIndex = afterSku.length;
-  for (let i = 0; i < afterSku.length - 1; i += 1) {
-    if (MONEY_REGEX.test(afterSku[i]) && MONEY_REGEX.test(afterSku[i + 1])) {
-      cutIndex = i;
+  // Scan for quantity (1-3 digits, 1-500)
+  for (let i = 0; i < tokens.length; i++) {
+    if (/^\d{1,3}$/.test(tokens[i]) && 1 <= Number.parseInt(tokens[i], 10) && Number.parseInt(tokens[i], 10) <= 500) {
+      qtyIdx = i;
       break;
     }
   }
 
-  const productTokens = afterSku.slice(0, cutIndex);
-  return productTokens.join(" ").trim();
+  // Scan for SKU (3-14 chars, mix of letters/numbers/dashes, NOT pure numbers)
+  for (let i = 0; i < tokens.length; i++) {
+    if (/^[A-Z0-9_-]{3,14}$/i.test(tokens[i]) && /[A-Z_-]/i.test(tokens[i])) {
+      skuIdx = i;
+      break;
+    }
+  }
+
+  // Scan for price (money format: 1.99, 10.00, $1.99, etc.)
+  for (let i = 0; i < tokens.length; i++) {
+    if (/^\$?\d+(?:,\d{3})*(?:\.\d{2})?$/.test(tokens[i])) {
+      priceIdx = i;
+      break;
+    }
+  }
+
+  if (qtyIdx < 0 || skuIdx < 0) {
+    return null;
+  }
+
+  const qty = Number.parseInt(tokens[qtyIdx], 10);
+  const sku = tokens[skuIdx];
+  const productStart = Math.min(qtyIdx, skuIdx) + 1;
+  const productEnd = priceIdx >= 0 ? priceIdx : tokens.length;
+  const productName = tokens.slice(productStart, productEnd).join(" ") || sku;
+
+  return {
+    sku,
+    productName,
+    quantity: qty
+  };
 }
+
+function extractBarcode(lines, startIndex, fallbackKey) {
+  for (let i = startIndex; i < Math.min(startIndex + 6, lines.length); i += 1) {
+    const barcodeMatch = lines[i].match(BARCODE_REGEX);
+    if (barcodeMatch) {
+      return barcodeMatch[1];
+    }
+  }
+
+  return fallbackKey;
+}
+
 
 export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
   const lines = normalizeText(text);
-  const seen = new Set();
   const items = [];
+  const seen = new Set();
 
-  for (const line of lines) {
-    const tokens = line.split(" ");
-    const skuIndex = findSkuIndex(tokens);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    let parsed = null;
 
-    if (skuIndex < 0) {
+    // Try rigid format first (strict regex)
+    const lineMatch = line.match(ITEM_LINE_REGEX);
+    if (lineMatch) {
+      const [, qtyRaw, sku, productName, , , inlineBarcode] = lineMatch;
+      const quantity = Number.parseInt(qtyRaw, 10);
+      if (Number.isFinite(quantity) && quantity >= 1) {
+        parsed = {
+          sku,
+          productName: productName.trim(),
+          quantity,
+          barcode: inlineBarcode || extractBarcode(lines, index, sku)
+        };
+      }
+    }
+
+    // Fall back to flexible parsing if rigid regex fails
+    if (!parsed) {
+      parsed = parseFlexibleLine(line);
+      if (parsed) {
+        parsed.barcode = extractBarcode(lines, index, parsed.sku);
+      }
+    }
+
+    if (!parsed) {
       continue;
     }
 
-    const sku = tokens[skuIndex];
-    const quantity = findQuantity(tokens, skuIndex);
-    if (!quantity) {
-      continue;
-    }
-
-    const productName = parseProductName(tokens, skuIndex);
-    const dedupeKey = `${sku}|${quantity}|${productName}`;
+    const dedupeKey = `${parsed.sku}|${parsed.quantity}|${parsed.productName}`;
     if (seen.has(dedupeKey)) {
       continue;
     }
@@ -99,15 +117,15 @@ export function parsePOTextToItems(text, sourceName = "unknown.pdf") {
     seen.add(dedupeKey);
 
     items.push({
-      sku,
-      productName: productName || sku,
-      quantity,
-      // Barcode for scanners must be SKU only.
-      barcode: sku,
+      sku: parsed.sku,
+      productName: parsed.productName,
+      quantity: parsed.quantity,
+      barcode: parsed.barcode,
       sourceName
     });
   }
 
+  console.log(`[${sourceName}] Parsed ${items.length} items from ${lines.length} lines`);
   return items;
 }
 
@@ -117,10 +135,10 @@ export function expandItemsToLabels(items) {
   for (const item of items) {
     for (let copy = 0; copy < item.quantity; copy += 1) {
       labels.push({
-        id: `${item.sourceName}-${item.sku}-${copy}`,
+        id: `${item.sourceName}-${item.sku}-${item.barcode}-${copy}`,
         sku: item.sku,
         productName: item.productName,
-        barcode: item.sku,
+        barcode: item.barcode,
         quantity: item.quantity,
         copyNumber: copy + 1,
         sourceName: item.sourceName
