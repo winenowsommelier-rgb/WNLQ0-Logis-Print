@@ -40,7 +40,7 @@ export default function HomePage() {
           <div className="eyebrow">WINE-NOW OPERATIONS</div>
           <div className="heroGrid">
             <div className="heroCopy">
-              <h1>Premium label preparation for retail-ready bottle handling.</h1>
+              <h1>Label preparation app</h1>
               <p>
                 Ingest purchase orders, verify extracted rows, and release print-ready sticker sheets
                 tuned for your 110mm thermal roll stock.
