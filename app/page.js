@@ -4,46 +4,65 @@ import { useMemo, useState } from "react";
 import FileUploader from "@/components/FileUploader";
 import LabelSheet from "@/components/LabelSheet";
 import ParseReviewTable from "@/components/ParseReviewTable";
+import ParsedItemsTable from "@/components/ParsedItemsTable";
+import { buildBatchValidation } from "@/utils/parsePO";
 
 export default function HomePage() {
-  const [labels, setLabels] = useState([]);
-  const [parsedItems, setParsedItems] = useState([]);
-  const [sourceFiles, setSourceFiles] = useState([]);
+  const [batch, setBatch] = useState({
+    labels: [],
+    items: [],
+    files: [],
+    validation: {
+      filesProcessed: 0,
+      itemsParsed: 0,
+      labelsToPrint: 0,
+      missingBarcodeCount: 0,
+      templates: [],
+      warnings: []
+    }
+  });
 
   const summary = useMemo(() => {
-    const skuSet = new Set(labels.map((label) => label.sku));
+    const skuSet = new Set(batch.labels.map((label) => label.sku));
+
     return {
-      totalLabels: labels.length,
+      totalLabels: batch.labels.length,
       uniqueSkus: skuSet.size,
-      files: sourceFiles.length
+      files: batch.files.length,
+      items: batch.items.length
     };
-  }, [labels, sourceFiles]);
+  }, [batch]);
 
   return (
     <main className="page">
       <header className="hero">
         <h1>Warehouse Label Printer</h1>
         <p>
-          Upload one or more PO PDFs, parse SKU/quantity rows, confirm parsed rows, then generate and print
+          Upload one or more PO PDFs, parse item rows, confirm the extracted data, then preview and print
           exact 32mm × 25mm labels.
         </p>
       </header>
 
       <section className="card">
         <FileUploader
-          onItemsParsed={(items) => {
-            setParsedItems(items);
-            setLabels([]);
+          onBatchParsed={(nextBatch) => {
+            setBatch({
+              ...nextBatch,
+              labels: []
+            });
           }}
-          onFilesProcessed={setSourceFiles}
         />
       </section>
 
       <ParseReviewTable
-        items={parsedItems}
-        onConfirm={({ items, labels: generatedLabels }) => {
-          setParsedItems(items);
-          setLabels(generatedLabels);
+        items={batch.items}
+        onConfirm={({ items, labels }) => {
+          setBatch((currentBatch) => ({
+            ...currentBatch,
+            items,
+            labels,
+            validation: buildBatchValidation(items, currentBatch.files)
+          }));
         }}
       />
 
@@ -57,13 +76,21 @@ export default function HomePage() {
           <p>Unique SKUs</p>
         </article>
         <article className="statCard">
+          <h2>{summary.items}</h2>
+          <p>Parsed PO rows</p>
+        </article>
+        <article className="statCard">
           <h2>{summary.totalLabels}</h2>
           <p>Labels in print batch</p>
         </article>
       </section>
 
       <section className="card">
-        <LabelSheet labels={labels} />
+        <ParsedItemsTable items={batch.items} validation={batch.validation} />
+      </section>
+
+      <section className="card">
+        <LabelSheet labels={batch.labels} />
       </section>
     </main>
   );
